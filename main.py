@@ -249,7 +249,7 @@ CLEANING_FPS = 10
 # dog matches the normal dog size.
 # 0.42 makes the cleaning dog approximately the same size as
 # the normal 70-75 px dog.
-CLEANING_SCALE = 0.42
+CLEANING_SCALE = 0.23
 
 # Position of the dog's feet inside the generated cleaning frame.
 # CLEANING_FRAME_DOG_BASELINE_Y is scaled together with the frame.
@@ -2376,6 +2376,13 @@ def update_cleaning_display():
 
     if pixmap.isNull():
         return
+
+    # The cleaning artwork is drawn facing right. Keep the dog
+    # facing the same direction it was facing before cleaning.
+    # Flip the complete transparent cleaning frame when the dog
+    # was facing left.
+    if facing == -1:
+        pixmap = flip(pixmap)
 
     cleaning_dog.setPixmap(
         pixmap
