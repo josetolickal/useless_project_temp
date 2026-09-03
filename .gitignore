@@ -1,4 +1,33 @@
+# Python virtual environment
 .venv/
+venv/
+env/
+
+# Python cache
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+
+# IDE settings
+.vscode/
+.idea/
+
+# Python test/cache files
+.pytest_cache/
+.mypy_cache/
+
+# Build files
+build/
+dist/
+*.egg-info/
+
+# Windows files
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
