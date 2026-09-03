@@ -7,9 +7,9 @@ import ctypes
 from ctypes import wintypes
 from collections import deque
 
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QTransform, QPainter, QCursor, QImage
+from PySide6.QtGui import QPixmap, QTransform, QPainter, QCursor, QImage, QColor, QPen, QBrush
 
 from pynput import keyboard, mouse
 
@@ -85,6 +85,32 @@ tornado_dog.setStyleSheet(
 )
 
 tornado_dog.hide()
+
+# Separate transparent window for the 10-frame cleaning animation.
+# The cleaning PNG already contains the shower and the dog.
+cleaning_dog = QLabel()
+
+cleaning_dog.setWindowFlags(
+    Qt.FramelessWindowHint
+    | Qt.WindowStaysOnTopHint
+    | Qt.Tool
+)
+
+cleaning_dog.setAttribute(
+    Qt.WA_TranslucentBackground,
+    True
+)
+
+cleaning_dog.setAttribute(
+    Qt.WA_TransparentForMouseEvents,
+    True
+)
+
+cleaning_dog.setStyleSheet(
+    "background: transparent;"
+)
+
+cleaning_dog.hide()
 
 
 dog.setWindowFlags(
@@ -191,6 +217,47 @@ TORNADO_ANGULAR_SPEED = 0.055
 
 
 # ============================================================
+# MUD MODE
+# ============================================================
+
+# M = enter mud mode and play the roll animation.
+# C = return to the clean dog.
+MUD_ROLL_FRAME_COUNT = 10
+MUD_WALK_FRAME_COUNT = 10
+MUD_RUN_FRAME_COUNT = 10
+
+MUD_ROLL_FPS = 12
+MUD_WALK_FPS = 8
+MUD_RUN_FPS = 11
+
+# Distance travelled before another muddy footprint is placed.
+FOOTPRINT_DISTANCE = 30.0
+
+# Safety cap for footprint count.
+MAX_FOOTPRINTS = 300
+
+
+# ============================================================
+# CLEANING ANIMATION
+# ============================================================
+
+CLEANING_FRAME_COUNT = 10
+CLEANING_FPS = 10
+
+# The generated cleaning artwork contains a larger dog than the
+# normal in-game dog. Scale the COMPLETE cleaning frame so the
+# dog matches the normal dog size.
+# 0.42 makes the cleaning dog approximately the same size as
+# the normal 70-75 px dog.
+CLEANING_SCALE = 0.42
+
+# Position of the dog's feet inside the generated cleaning frame.
+# CLEANING_FRAME_DOG_BASELINE_Y is scaled together with the frame.
+CLEANING_DOG_BASELINE_Y = 370
+CLEANING_FRAME_DOG_BASELINE_Y = round(470 * CLEANING_SCALE)
+
+
+# ============================================================
 # CIRCLE DETECTION
 # ============================================================
 
@@ -217,23 +284,164 @@ screen_rect = screen.availableGeometry()
 
 
 # ============================================================
+# MUD FOOTPRINT OVERLAY
+# ============================================================
+
+class FootprintOverlay(QWidget):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.footprints = []
+
+        self.setWindowFlags(
+            Qt.FramelessWindowHint
+            | Qt.Tool
+            | Qt.WindowStaysOnTopHint
+        )
+
+        self.setAttribute(
+            Qt.WA_TranslucentBackground,
+            True
+        )
+
+        self.setAttribute(
+            Qt.WA_TransparentForMouseEvents,
+            True
+        )
+
+        self.setStyleSheet(
+            "background: transparent;"
+        )
+
+        self.setGeometry(
+            screen_rect
+        )
+
+        self.hide()
+
+    def clear_footprints(self):
+
+        self.footprints.clear()
+
+        self.update()
+
+    def add_footprint(self, x, y, side):
+
+        self.footprints.append(
+            (
+                float(x),
+                float(y),
+                int(side)
+            )
+        )
+
+        if len(self.footprints) > MAX_FOOTPRINTS:
+
+            del self.footprints[0]
+
+        self.update()
+
+    def paintEvent(self, event):
+
+        if not self.footprints:
+            return
+
+        painter = QPainter(self)
+
+        painter.setRenderHint(
+            QPainter.Antialiasing,
+            True
+        )
+
+        painter.setBrush(
+            QBrush(
+                QColor(72, 43, 27, 175)
+            )
+        )
+
+        painter.setPen(
+            QPen(Qt.NoPen)
+        )
+
+        ox = screen_rect.left()
+        oy = screen_rect.top()
+
+        for x, y, side in self.footprints:
+
+            px = x - ox + side * 6
+            py = y - oy
+
+            # Main paw pad.
+            painter.drawEllipse(
+                int(px - 4),
+                int(py - 2),
+                8,
+                7
+            )
+
+            # Three toe pads.
+            painter.drawEllipse(
+                int(px - 7),
+                int(py - 7),
+                4,
+                4
+            )
+
+            painter.drawEllipse(
+                int(px - 2),
+                int(py - 9),
+                4,
+                4
+            )
+
+            painter.drawEllipse(
+                int(px + 3),
+                int(py - 7),
+                4,
+                4
+            )
+
+        painter.end()
+
+
+footprints_overlay = FootprintOverlay()
+
+
+# ============================================================
 # IMAGE LOADER
 # ============================================================
 
 def load_image(filename):
 
-    path = os.path.join(
-        BASE_DIR,
-        filename
-    )
+    candidates = [
+        os.path.join(BASE_DIR, filename),
+        os.path.join(BASE_DIR, "assets", filename),
+        os.path.join(BASE_DIR, "assets", "mud", filename),
+    ]
 
-    if not os.path.exists(path):
+    path = None
+
+    for candidate in candidates:
+
+        if os.path.exists(candidate):
+
+            path = candidate
+            break
+
+    if path is None:
 
         print()
         print("========================================")
         print("MISSING IMAGE")
         print("========================================")
-        print(path)
+        print(filename)
+        print("Searched:")
+
+        for candidate in candidates:
+            print(candidate)
+
         print()
 
         sys.exit(1)
@@ -552,6 +760,37 @@ def load_tornado_animation():
 
 
 # ============================================================
+# LOAD MUD ANIMATIONS
+# ============================================================
+
+def load_mud_animation(prefix, count, size):
+
+    frames = []
+
+    for i in range(1, count + 1):
+
+        filename = f"{prefix}{i:02d}.png"
+
+        print(
+            "Loading:",
+            filename
+        )
+
+        img = load_image(
+            filename
+        )
+
+        frames.append(
+            prepare_frame(
+                img,
+                size
+            )
+        )
+
+    return frames
+
+
+# ============================================================
 # LOAD ALL ANIMATIONS
 # ============================================================
 
@@ -570,6 +809,65 @@ sleep_frames = load_animation(
 ssj_frames = load_ssj_animation()
 
 tornado_frames = load_tornado_animation()
+
+mud_roll_frames = load_mud_animation(
+    "mud_roll_",
+    MUD_ROLL_FRAME_COUNT,
+    WALK_SIZE
+)
+
+mud_walk_frames = load_mud_animation(
+    "mud_walk_",
+    MUD_WALK_FRAME_COUNT,
+    WALK_SIZE
+)
+
+mud_run_frames = load_mud_animation(
+    "mud_run_",
+    MUD_RUN_FRAME_COUNT,
+    RUN_SIZE
+)
+
+
+# ============================================================
+# LOAD CLEANING ANIMATION
+# ============================================================
+
+def load_cleaning_animation():
+
+    frames = []
+
+    for i in range(1, CLEANING_FRAME_COUNT + 1):
+
+        filename = f"cleaning_{i:02d}.png"
+
+        print(
+            "Loading:",
+            filename
+        )
+
+        img = load_image(
+            filename
+        )
+
+        # Keep the complete frame so the shower remains intact,
+        # but scale the entire animation to match the normal dog size.
+        scaled_width = max(1, round(img.width() * CLEANING_SCALE))
+        scaled_height = max(1, round(img.height() * CLEANING_SCALE))
+
+        img = img.scaled(
+            scaled_width,
+            scaled_height,
+            Qt.IgnoreAspectRatio,
+            Qt.SmoothTransformation
+        )
+
+        frames.append(img)
+
+    return frames
+
+
+cleaning_frames = load_cleaning_animation()
 
 
 # ============================================================
@@ -659,6 +957,38 @@ tornado_motion_radius = (
 
 
 # ============================================================
+# MUD STATE
+# ============================================================
+
+muddy_active = False
+mud_roll_playing = False
+
+mud_roll_index = 0
+mud_roll_timer = 0.0
+
+mud_walk_index = 0
+mud_walk_timer = 0.0
+
+mud_run_index = 0
+mud_run_timer = 0.0
+
+mud_command = None
+
+last_footprint_x = None
+last_footprint_y = None
+footprint_side = -1
+
+
+# ============================================================
+# CLEANING STATE
+# ============================================================
+
+cleaning_active = False
+cleaning_index = 0
+cleaning_timer = 0.0
+
+
+# ============================================================
 # KILL SWITCH
 # ============================================================
 
@@ -710,6 +1040,34 @@ keyboard_listener = keyboard.GlobalHotKeys({
 })
 
 keyboard_listener.start()
+
+
+def mud_key_handler(key):
+
+    global mud_command
+
+    try:
+        char = key.char
+    except AttributeError:
+        return
+
+    if not char:
+        return
+
+    char = char.lower()
+
+    if char == "m":
+        mud_command = "mud"
+
+    elif char == "c":
+        mud_command = "clean"
+
+
+mud_keyboard_listener = keyboard.Listener(
+    on_press=mud_key_handler
+)
+
+mud_keyboard_listener.start()
 
 
 # ============================================================
@@ -1094,6 +1452,8 @@ def start_ssj():
 
     ssj_active = True
 
+    footprints_overlay.hide()
+
     ssj_index = 0
 
     ssj_timer = 0
@@ -1132,9 +1492,14 @@ def stop_ssj():
 
     ssj_scale = SSJ_START_SCALE
 
-    state = "idle"
+    state = "mud" if muddy_active else "idle"
 
     stop_screen_shake()
+
+    if muddy_active:
+
+        footprints_overlay.show()
+        footprints_overlay.raise_()
 
 
 # ============================================================
@@ -1511,6 +1876,597 @@ def detect_circular_motion():
 
 
 # ============================================================
+# MUD ANIMATION HELPERS
+# ============================================================
+
+def get_mud_roll():
+
+    frame = mud_roll_frames[
+        mud_roll_index
+    ]
+
+    if facing == -1:
+        return flip(frame)
+
+    return frame
+
+
+def get_mud_walk():
+
+    frame = mud_walk_frames[
+        mud_walk_index
+    ]
+
+    if facing == -1:
+        return flip(frame)
+
+    return frame
+
+
+def get_mud_run():
+
+    frame = mud_run_frames[
+        mud_run_index
+    ]
+
+    if facing == -1:
+        return flip(frame)
+
+    return frame
+
+
+def reset_footprints():
+
+    global last_footprint_x
+    global last_footprint_y
+    global footprint_side
+
+    last_footprint_x = None
+    last_footprint_y = None
+    footprint_side = -1
+
+    footprints_overlay.clear_footprints()
+
+
+def record_muddy_footprints():
+
+    global last_footprint_x
+    global last_footprint_y
+    global footprint_side
+
+    if not muddy_active or mud_roll_playing:
+        return
+
+    paw_x = (
+        dog_x
+        + CANVAS_SIZE / 2
+    )
+
+    paw_y = (
+        dog_y
+        + CANVAS_SIZE
+        - 38
+    )
+
+    if last_footprint_x is None:
+
+        last_footprint_x = paw_x
+        last_footprint_y = paw_y
+        return
+
+    distance = math.hypot(
+        paw_x - last_footprint_x,
+        paw_y - last_footprint_y
+    )
+
+    if distance < FOOTPRINT_DISTANCE:
+        return
+
+    footprint_side *= -1
+
+    footprints_overlay.add_footprint(
+        paw_x,
+        paw_y,
+        footprint_side
+    )
+
+    last_footprint_x = paw_x
+    last_footprint_y = paw_y
+
+
+def start_mud_mode():
+
+    global muddy_active
+    global mud_roll_playing
+    global mud_roll_index
+    global mud_roll_timer
+    global state
+
+    if muddy_active:
+        return
+
+    if tornado_active or ssj_active:
+        return
+
+    muddy_active = True
+    mud_roll_playing = True
+    mud_roll_index = 0
+    mud_roll_timer = 0.0
+    state = "mud_roll"
+
+    reset_footprints()
+
+    footprints_overlay.show()
+    footprints_overlay.raise_()
+
+    # The roll replaces the clean dog visually.
+    dog.show()
+    dog.raise_()
+
+    print()
+    print(">>> MUD MODE ACTIVATED <<<")
+    print()
+
+
+def stop_mud_mode():
+
+    global cleaning_active
+    global cleaning_index
+    global cleaning_timer
+    global muddy_active
+    global mud_roll_playing
+    global mud_roll_index
+    global mud_roll_timer
+    global mud_walk_index
+    global mud_walk_timer
+    global mud_run_index
+    global mud_run_timer
+    global state
+
+    muddy_active = False
+    mud_roll_playing = False
+
+    cleaning_active = False
+    cleaning_index = 0
+    cleaning_timer = 0.0
+
+    cleaning_dog.hide()
+    cleaning_dog.clear()
+
+    mud_roll_index = 0
+    mud_roll_timer = 0.0
+
+    mud_walk_index = 0
+    mud_walk_timer = 0.0
+
+    mud_run_index = 0
+    mud_run_timer = 0.0
+
+    state = "idle"
+
+    footprints_overlay.hide()
+    reset_footprints()
+
+    dog.resize(
+        CANVAS_SIZE,
+        CANVAS_SIZE
+    )
+
+    dog.setPixmap(
+        get_walk()
+    )
+
+    dog.move(
+        round(dog_x),
+        round(dog_y)
+    )
+
+    dog.show()
+    dog.raise_()
+
+    print()
+    print(">>> MUD MODE ENDED <<<")
+    print()
+
+
+def update_mud_roll():
+
+    global mud_roll_index
+    global mud_roll_timer
+    global mud_roll_playing
+    global state
+
+    if not mud_roll_playing:
+        return
+
+    mud_roll_timer += (
+        MUD_ROLL_FPS / FPS
+    )
+
+    while mud_roll_timer >= 1:
+
+        mud_roll_timer -= 1
+
+        mud_roll_index += 1
+
+        if (
+            mud_roll_index
+            >= MUD_ROLL_FRAME_COUNT
+        ):
+
+            mud_roll_index = (
+                MUD_ROLL_FRAME_COUNT - 1
+            )
+
+            mud_roll_playing = False
+            state = "mud"
+
+            break
+
+
+def update_mud_walk():
+
+    global mud_walk_index
+    global mud_walk_timer
+
+    mud_walk_timer += (
+        MUD_WALK_FPS / FPS
+    )
+
+    while mud_walk_timer >= 1:
+
+        mud_walk_timer -= 1
+        mud_walk_index += 1
+
+        if (
+            mud_walk_index
+            >= MUD_WALK_FRAME_COUNT
+        ):
+
+            mud_walk_index = 0
+
+
+def update_mud_run():
+
+    global mud_run_index
+    global mud_run_timer
+
+    mud_run_timer += (
+        MUD_RUN_FPS / FPS
+    )
+
+    while mud_run_timer >= 1:
+
+        mud_run_timer -= 1
+        mud_run_index += 1
+
+        if (
+            mud_run_index
+            >= MUD_RUN_FRAME_COUNT
+        ):
+
+            mud_run_index = 0
+
+
+def move_muddy_dog():
+
+    global dog_x
+    global dog_y
+    global facing
+    global state
+
+    if mud_roll_playing:
+        return
+
+    dx, dy, distance = cursor_data()
+
+    if distance <= CATCH_DISTANCE:
+
+        state = "mud"
+        record_muddy_footprints()
+        return
+
+    if abs(dx) > 2:
+
+        if dx < 0:
+            facing = -1
+        else:
+            facing = 1
+
+    if distance >= RUN_DISTANCE:
+
+        state = "mud_run"
+        speed = MAX_RUN_SPEED
+
+    elif distance >= SLOW_DISTANCE:
+
+        state = "mud_walk"
+        speed = MAX_WALK_SPEED
+
+    else:
+
+        state = "mud_walk"
+
+        ratio = (
+            distance - CATCH_DISTANCE
+        ) / (
+            SLOW_DISTANCE - CATCH_DISTANCE
+        )
+
+        ratio = max(
+            0,
+            min(ratio, 1)
+        )
+
+        ratio = (
+            ratio
+            * ratio
+            * (
+                3 - 2 * ratio
+            )
+        )
+
+        speed = (
+            MIN_CLOSE_SPEED
+            + (
+                MAX_WALK_SPEED
+                - MIN_CLOSE_SPEED
+            ) * ratio
+        )
+
+    if distance > 0:
+
+        nx = dx / distance
+        ny = dy / distance
+
+    else:
+
+        nx = 0
+        ny = 0
+
+    dog_x += nx * speed
+    dog_y += ny * speed
+
+    dog_x = max(
+        screen_rect.left(),
+        min(
+            dog_x,
+            screen_rect.right()
+            - CANVAS_SIZE
+        )
+    )
+
+    dog_y = max(
+        screen_rect.top(),
+        min(
+            dog_y,
+            screen_rect.bottom()
+            - CANVAS_SIZE
+        )
+    )
+
+    record_muddy_footprints()
+
+
+def update_mud_display():
+
+    if mud_roll_playing:
+
+        # Animation advances here, but the dog does not move during the roll.
+        update_mud_roll()
+
+        dog.resize(
+            CANVAS_SIZE,
+            CANVAS_SIZE
+        )
+
+        dog.setPixmap(
+            get_mud_roll()
+        )
+
+    elif state == "mud_run":
+
+        update_mud_run()
+
+        dog.resize(
+            CANVAS_SIZE,
+            CANVAS_SIZE
+        )
+
+        dog.setPixmap(
+            get_mud_run()
+        )
+
+    else:
+
+        update_mud_walk()
+
+        dog.resize(
+            CANVAS_SIZE,
+            CANVAS_SIZE
+        )
+
+        dog.setPixmap(
+            get_mud_walk()
+        )
+
+    dog.move(
+        round(dog_x),
+        round(dog_y)
+    )
+
+    dog.show()
+    dog.raise_()
+
+
+# ============================================================
+# CLEANING ANIMATION
+# ============================================================
+
+def start_cleaning_mode():
+
+    global cleaning_active
+    global cleaning_index
+    global cleaning_timer
+    global state
+
+    if cleaning_active:
+        return
+
+    if not muddy_active:
+        return
+
+    if tornado_active or ssj_active:
+        return
+
+    cleaning_active = True
+    cleaning_index = 0
+    cleaning_timer = 0.0
+    state = "cleaning"
+
+    # Hide the ordinary dog and footprints. The cleaning PNG
+    # contains the complete shower + dog animation.
+    dog.hide()
+    footprints_overlay.hide()
+
+    cleaning_dog.clear()
+    cleaning_dog.show()
+    cleaning_dog.raise_()
+
+    update_cleaning_display()
+
+    print()
+    print(">>> DOG CLEANING STARTED <<<")
+    print()
+
+
+def update_cleaning():
+
+    global cleaning_index
+    global cleaning_timer
+    global cleaning_active
+
+    if not cleaning_active:
+        return
+
+    cleaning_timer += (
+        CLEANING_FPS / FPS
+    )
+
+    while cleaning_timer >= 1:
+
+        cleaning_timer -= 1
+        cleaning_index += 1
+
+        if cleaning_index >= CLEANING_FRAME_COUNT:
+
+            cleaning_index = CLEANING_FRAME_COUNT - 1
+            finish_cleaning_mode()
+            return
+
+
+def update_cleaning_display():
+
+    if not cleaning_active:
+        return
+
+    pixmap = cleaning_frames[
+        cleaning_index
+    ]
+
+    if pixmap.isNull():
+        return
+
+    cleaning_dog.setPixmap(
+        pixmap
+    )
+
+    cleaning_dog.resize(
+        pixmap.size()
+    )
+
+    # Keep the dog in the cleaning animation aligned with the
+    # muddy dog's current position. This makes the giant shower
+    # appear above the dog regardless of where it is on screen.
+    dog_center_x = (
+        dog_x
+        + CANVAS_SIZE / 2
+    )
+
+    dog_baseline = (
+        dog_y
+        + CLEANING_DOG_BASELINE_Y
+    )
+
+    new_x = (
+        dog_center_x
+        - pixmap.width() / 2
+    )
+
+    new_y = (
+        dog_baseline
+        - CLEANING_FRAME_DOG_BASELINE_Y
+    )
+
+    cleaning_dog.move(
+        round(new_x),
+        round(new_y)
+    )
+
+    cleaning_dog.show()
+    cleaning_dog.raise_()
+
+
+def finish_cleaning_mode():
+
+    global cleaning_active
+    global cleaning_index
+    global cleaning_timer
+    global muddy_active
+    global mud_roll_playing
+    global state
+
+    if not cleaning_active:
+        return
+
+    cleaning_active = False
+    cleaning_index = 0
+    cleaning_timer = 0.0
+
+    # Cleaning is finished: restore the original clean dog state.
+    muddy_active = False
+    mud_roll_playing = False
+    state = "idle"
+
+    cleaning_dog.hide()
+    cleaning_dog.clear()
+
+    reset_footprints()
+    footprints_overlay.hide()
+
+    dog.resize(
+        CANVAS_SIZE,
+        CANVAS_SIZE
+    )
+
+    dog.setPixmap(
+        get_walk()
+    )
+
+    dog.move(
+        round(dog_x),
+        round(dog_y)
+    )
+
+    dog.show()
+    dog.raise_()
+
+    print()
+    print(">>> DOG CLEANED - NORMAL MODE RESTORED <<<")
+    print()
+
+
+# ============================================================
 # START TORNADO
 # ============================================================
 
@@ -1617,7 +2573,7 @@ def stop_tornado():
 
     tornado_timer = 0.0
 
-    state = "idle"
+    state = "mud" if muddy_active else "idle"
 
     # --------------------------------------------------------
     # Remove tornado window.
@@ -1648,6 +2604,12 @@ def stop_tornado():
     dog.show()
 
     dog.raise_()
+
+    if muddy_active:
+
+        footprints_overlay.show()
+        footprints_overlay.raise_()
+        update_mud_display()
 
     # Prevent immediate retrigger.
     cursor_history.clear()
@@ -1873,6 +2835,12 @@ def move_dog():
         return
 
     if tornado_active:
+        return
+
+    if muddy_active:
+
+        move_muddy_dog()
+
         return
 
     dx, dy, distance = (
@@ -2197,6 +3165,13 @@ def update_display():
 
         return
 
+    # Mud mode has its own animation set.
+    if muddy_active:
+
+        update_mud_display()
+
+        return
+
 
     # ========================================================
     # SSJ
@@ -2337,6 +3312,44 @@ def update_display():
 
 
 # ============================================================
+# PROCESS MUD COMMANDS
+# ============================================================
+
+def process_mud_commands():
+
+    global mud_command
+
+    if mud_command is None:
+        return
+
+    command = mud_command
+    mud_command = None
+
+    if command == "mud":
+
+        if (
+            not muddy_active
+            and not tornado_active
+            and not ssj_active
+        ):
+
+            start_mud_mode()
+
+    elif command == "clean":
+
+        # C starts the 10-frame shower cleaning animation.
+        # The dog becomes clean only after the animation ends.
+        if (
+            muddy_active
+            and not cleaning_active
+            and not tornado_active
+            and not ssj_active
+        ):
+
+            start_cleaning_mode()
+
+
+# ============================================================
 # MAIN UPDATE
 # ============================================================
 
@@ -2357,6 +3370,8 @@ def update():
 
         dog.hide()
         tornado_dog.hide()
+        cleaning_dog.hide()
+        footprints_overlay.hide()
 
         timer.stop()
 
@@ -2371,6 +3386,30 @@ def update():
             pass
 
         app.quit()
+
+        return
+
+
+    # ========================================================
+    # MUD KEY COMMANDS
+    # ========================================================
+
+    process_mud_commands()
+
+
+    # ========================================================
+    # CLEANING ANIMATION
+    # ========================================================
+
+    if cleaning_active:
+
+        dog.hide()
+        footprints_overlay.hide()
+
+        update_cleaning()
+
+        if cleaning_active:
+            update_cleaning_display()
 
         return
 
@@ -2404,6 +3443,8 @@ def update():
     # ========================================================
 
     if tornado_active:
+
+        footprints_overlay.hide()
 
         # ----------------------------------------------------
         # NORMAL DOG IS HIDDEN FOR ENTIRE TORNADO.
@@ -2503,6 +3544,8 @@ timer.start(
 # ============================================================
 
 tornado_dog.hide()
+cleaning_dog.hide()
+footprints_overlay.hide()
 
 dog.setPixmap(
     get_walk()
@@ -2612,6 +3655,23 @@ print(
 print()
 
 print(
+    "MUD MODE"
+)
+print(
+    "----------------------------------------"
+)
+print(
+    "M -> Roll in mud and stay muddy"
+)
+print(
+    "C -> Return to clean dog"
+)
+print(
+    "Muddy dog leaves footprints while moving"
+)
+print()
+
+print(
     "KILL SWITCH"
 )
 print(
@@ -2652,5 +3712,10 @@ finally:
 
     try:
         mouse_listener.stop()
+    except Exception:
+        pass
+
+    try:
+        mud_keyboard_listener.stop()
     except Exception:
         pass
