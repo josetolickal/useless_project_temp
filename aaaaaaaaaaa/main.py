@@ -249,57 +249,12 @@ CLEANING_FPS = 10
 # dog matches the normal dog size.
 # 0.42 makes the cleaning dog approximately the same size as
 # the normal 70-75 px dog.
-CLEANING_SCALE = 0.42
+CLEANING_SCALE = 0.23
 
 # Position of the dog's feet inside the generated cleaning frame.
 # CLEANING_FRAME_DOG_BASELINE_Y is scaled together with the frame.
 CLEANING_DOG_BASELINE_Y = 370
 CLEANING_FRAME_DOG_BASELINE_Y = round(470 * CLEANING_SCALE)
-
-
-# ============================================================
-# FEEDING / HUNGER SYSTEM
-# ============================================================
-
-# Press F to feed the dog.
-# The dog must be fed before this timer reaches zero.
-FEED_INTERVAL = 30.0
-
-# How long the chicken piece stays near the dog's mouth.
-FEED_EFFECT_DURATION = 1.2
-
-# When the dog is not fed in time, the dog enters a short
-# automatic Super Saiyan hunger-rage and the desktop is
-# visually frozen by a full-screen blocking overlay.
-HUNGER_RAGE_DURATION = 4.0
-
-
-# ============================================================
-# HUNGER-RAGE SUPER SAIYAN ANIMATION
-# ============================================================
-
-# Front-facing 10-frame SSJ transformation used ONLY when the
-# feeding timer expires and the dog enters hunger rage.
-HUNGER_SSJ_FRAME_COUNT = 10
-HUNGER_SSJ_FPS = 8
-HUNGER_SSJ_START_SCALE = 1.0
-HUNGER_SSJ_MAX_SCALE = 1.55
-HUNGER_SSJ_GROWTH_SPEED = 0.012
-HUNGER_SSJ_PADDING = 40
-
-
-# ============================================================
-# EATING ANIMATION
-# ============================================================
-
-# Ten dog-only eating frames. The chicken is drawn inside these frames,
-# so there is NO separate chicken object or chicken window.
-EATING_FRAME_COUNT = 10
-EATING_FPS = 10
-
-# Change ONLY this value to make the eating dog larger/smaller.
-# 70 matches the normal WALK_SIZE reference.
-EATING_SIZE = 70
 
 
 # ============================================================
@@ -455,119 +410,6 @@ footprints_overlay = FootprintOverlay()
 
 
 # ============================================================
-# HUNGER RAGE FREEZE OVERLAY
-# ============================================================
-
-class HungerFreezeOverlay(QWidget):
-
-    def __init__(self):
-
-        super().__init__()
-
-        self.setWindowFlags(
-            Qt.FramelessWindowHint
-            | Qt.Tool
-            | Qt.WindowStaysOnTopHint
-        )
-
-        self.setAttribute(
-            Qt.WA_TranslucentBackground,
-            True
-        )
-
-        # This must accept mouse input so windows underneath cannot
-        # be clicked while the hunger-rage freeze is active.
-        self.setAttribute(
-            Qt.WA_TransparentForMouseEvents,
-            False
-        )
-
-        self.setGeometry(
-            screen.geometry()
-        )
-
-        self.hide()
-
-    def paintEvent(self, event):
-
-        painter = QPainter(self)
-
-        painter.fillRect(
-            self.rect(),
-            QColor(18, 18, 24, 70)
-        )
-
-        painter.setPen(
-            QPen(
-                QColor(255, 210, 60, 230),
-                3
-            )
-        )
-
-        font = painter.font()
-        font.setPointSize(32)
-        font.setBold(True)
-        painter.setFont(font)
-
-        text = "DOG HUNGER RAGE!"
-
-        painter.drawText(
-            self.rect(),
-            Qt.AlignCenter,
-            text
-        )
-
-        painter.end()
-
-
-hunger_overlay = HungerFreezeOverlay()
-
-
-# ============================================================
-# FOOD TIMER HUD
-# ============================================================
-
-food_timer_label = QLabel()
-
-food_timer_label.setWindowFlags(
-    Qt.FramelessWindowHint
-    | Qt.Tool
-    | Qt.WindowStaysOnTopHint
-)
-
-food_timer_label.setAttribute(
-    Qt.WA_TranslucentBackground,
-    True
-)
-
-food_timer_label.setAttribute(
-    Qt.WA_TransparentForMouseEvents,
-    True
-)
-
-food_timer_label.setStyleSheet(
-    "QLabel { "
-    "background: rgba(25,25,30,190); "
-    "color: white; "
-    "padding: 6px 10px; "
-    "border-radius: 8px; "
-    "font-size: 14px; "
-    "font-weight: bold; "
-    "}"
-)
-
-food_timer_label.adjustSize()
-
-food_timer_label.move(
-    screen_rect.left() + 20,
-    screen_rect.top() + 20
-)
-
-food_timer_label.show()
-food_timer_label.raise_()
-
-
-# ============================================================
 # IMAGE LOADER
 # ============================================================
 
@@ -575,12 +417,8 @@ def load_image(filename):
 
     candidates = [
         os.path.join(BASE_DIR, filename),
-        os.path.join(BASE_DIR, "eating", filename),
         os.path.join(BASE_DIR, "assets", filename),
-        os.path.join(BASE_DIR, "assets", "eating", filename),
         os.path.join(BASE_DIR, "assets", "mud", filename),
-        os.path.join(BASE_DIR, "assets", "eating", filename),
-        os.path.join(BASE_DIR, "assets", "ssj_front", filename),
     ]
 
     path = None
@@ -970,40 +808,6 @@ sleep_frames = load_animation(
 
 ssj_frames = load_ssj_animation()
 
-
-# ============================================================
-# LOAD FRONT-FACING HUNGER-RAGE SSJ
-# ============================================================
-
-def load_hunger_ssj_animation():
-
-    frames = []
-
-    for i in range(1, HUNGER_SSJ_FRAME_COUNT + 1):
-
-        filename = f"ssj_front_{i:02d}.png"
-
-        print(
-            "Loading:",
-            filename
-        )
-
-        img = load_image(filename)
-
-        img = crop_transparent(img)
-
-        img = add_padding(
-            img,
-            HUNGER_SSJ_PADDING
-        )
-
-        frames.append(img)
-
-    return frames
-
-
-hunger_ssj_frames = load_hunger_ssj_animation()
-
 tornado_frames = load_tornado_animation()
 
 mud_roll_frames = load_mud_animation(
@@ -1023,37 +827,6 @@ mud_run_frames = load_mud_animation(
     MUD_RUN_FRAME_COUNT,
     RUN_SIZE
 )
-
-
-# ============================================================
-# LOAD EATING ANIMATION
-# ============================================================
-
-def load_eating_animation():
-    frames = []
-
-    for i in range(1, EATING_FRAME_COUNT + 1):
-        filename = f"eat_{i:02d}.png"
-        print(
-            "Loading:",
-            filename
-        )
-
-        img = load_image(filename)
-
-        # Use the SAME prepare_frame pipeline as the normal dog so
-        # EATING_SIZE is the only value controlling the eating size.
-        frame = prepare_frame(
-            img,
-            EATING_SIZE
-        )
-
-        frames.append(frame)
-
-    return frames
-
-
-eating_frames = load_eating_animation()
 
 
 # ============================================================
@@ -1216,34 +989,6 @@ cleaning_timer = 0.0
 
 
 # ============================================================
-# FEEDING STATE
-# ============================================================
-
-
-feeding_active = False
-feeding_end_time = 0.0
-
-# Monotonic deadline for the next required feeding.
-food_deadline = time.monotonic() + FEED_INTERVAL
-
-# Prevent the automatic rage from starting repeatedly in the same frame.
-hunger_rage_active = False
-hunger_rage_end_time = 0.0
-hunger_rage_pending = False
-
-# Front-facing SSJ state used only during hunger rage.
-hunger_ssj_index = 0
-hunger_ssj_timer = 0.0
-hunger_ssj_scale = HUNGER_SSJ_START_SCALE
-
-
-# Eating animation state.
-eating_active = False
-eating_index = 0
-eating_timer = 0.0
-
-
-# ============================================================
 # KILL SWITCH
 # ============================================================
 
@@ -1316,9 +1061,6 @@ def mud_key_handler(key):
 
     elif char == "c":
         mud_command = "clean"
-
-    elif char == "f":
-        mud_command = "feed"
 
 
 mud_keyboard_listener = keyboard.Listener(
@@ -1538,162 +1280,6 @@ def get_ssj():
     painter.end()
 
     return canvas
-
-
-# ============================================================
-# HUNGER-RAGE SSJ FRAME
-# ============================================================
-
-def get_hunger_ssj():
-
-    frame = hunger_ssj_frames[
-        hunger_ssj_index
-    ]
-
-    width = int(
-        frame.width()
-        * hunger_ssj_scale
-    )
-
-    height = int(
-        frame.height()
-        * hunger_ssj_scale
-    )
-
-    width = max(1, width)
-    height = max(1, height)
-
-    frame = frame.scaled(
-        width,
-        height,
-        Qt.KeepAspectRatio,
-        Qt.SmoothTransformation
-    )
-
-    canvas_width = max(
-        CANVAS_SIZE,
-        frame.width() + 40
-    )
-
-    canvas_height = max(
-        CANVAS_SIZE,
-        frame.height() + 40
-    )
-
-    canvas = QPixmap(
-        canvas_width,
-        canvas_height
-    )
-
-    canvas.fill(
-        Qt.transparent
-    )
-
-    painter = QPainter(canvas)
-
-    x = (
-        canvas_width
-        - frame.width()
-    ) // 2
-
-    y = (
-        canvas_height
-        - frame.height()
-        - 20
-    )
-
-    painter.drawPixmap(
-        x,
-        y,
-        frame
-    )
-
-    painter.end()
-
-    return canvas
-
-
-# ============================================================
-# UPDATE HUNGER-RAGE SSJ ANIMATION
-# ============================================================
-
-def update_hunger_ssj():
-
-    global hunger_ssj_index
-    global hunger_ssj_timer
-    global hunger_ssj_scale
-
-    hunger_ssj_timer += (
-        HUNGER_SSJ_FPS / FPS
-    )
-
-    while hunger_ssj_timer >= 1:
-
-        hunger_ssj_timer -= 1
-
-        if hunger_ssj_index < HUNGER_SSJ_FRAME_COUNT - 1:
-            hunger_ssj_index += 1
-        else:
-            # Hold the final powered frames.
-            hunger_ssj_index = HUNGER_SSJ_FRAME_COUNT - 2
-
-    if hunger_ssj_scale < HUNGER_SSJ_MAX_SCALE:
-
-        hunger_ssj_scale = min(
-            HUNGER_SSJ_MAX_SCALE,
-            hunger_ssj_scale
-            + HUNGER_SSJ_GROWTH_SPEED
-        )
-
-
-# ============================================================
-# DISPLAY HUNGER-RAGE SSJ
-# ============================================================
-
-def update_hunger_ssj_display():
-
-    if not hunger_rage_active:
-        return
-
-    pixmap = get_hunger_ssj()
-
-    dog.setPixmap(
-        pixmap
-    )
-
-    dog.resize(
-        pixmap.size()
-    )
-
-    # Keep the enlarged front-facing dog centered on the same
-    # logical dog position used by the original SSJ mode.
-    center_x = (
-        dog_x
-        + CANVAS_SIZE / 2
-    )
-
-    center_y = (
-        dog_y
-        + CANVAS_SIZE / 2
-    )
-
-    new_x = (
-        center_x
-        - pixmap.width() / 2
-    )
-
-    new_y = (
-        center_y
-        - pixmap.height() / 2
-    )
-
-    dog.move(
-        round(new_x),
-        round(new_y)
-    )
-
-    dog.show()
-    dog.raise_()
 
 
 # ============================================================
@@ -2329,22 +1915,6 @@ def get_mud_run():
     return frame
 
 
-# ============================================================
-# EATING FRAME
-# ============================================================
-
-def get_eating():
-
-    frame = eating_frames[
-        eating_index
-    ]
-
-    if facing == -1:
-        return flip(frame)
-
-    return frame
-
-
 def reset_footprints():
 
     global last_footprint_x
@@ -2901,330 +2471,6 @@ def finish_cleaning_mode():
     print()
     print(">>> DOG CLEANED - NORMAL MODE RESTORED <<<")
     print()
-
-
-# ============================================================
-# FEEDING / EATING SYSTEM
-# ============================================================
-
-def update_food_timer_display():
-
-    if hunger_rage_active:
-
-        food_timer_label.setText(
-            "HUNGRY! RAGE!"
-        )
-
-    elif feeding_active:
-
-        food_timer_label.setText(
-            "Eating..."
-        )
-
-    else:
-
-        remaining = max(
-            0.0,
-            food_deadline - time.monotonic()
-        )
-
-        seconds = int(
-            math.ceil(remaining)
-        )
-
-        if seconds <= 5:
-
-            food_timer_label.setText(
-                f"FEED NOW: {seconds}s"
-            )
-
-        else:
-
-            food_timer_label.setText(
-                f"Feed dog: {seconds}s"
-            )
-
-    food_timer_label.adjustSize()
-
-    food_timer_label.move(
-        screen_rect.left() + 20,
-        screen_rect.top() + 20
-    )
-
-    food_timer_label.show()
-    food_timer_label.raise_()
-
-
-def start_feeding():
-
-    global feeding_active
-    global eating_active
-    global eating_index
-    global eating_timer
-    global food_deadline
-    global state
-
-    if feeding_active or eating_active:
-        return
-
-    if hunger_rage_active:
-        return
-
-    if cleaning_active or tornado_active or ssj_active:
-        return
-
-    # Reset hunger immediately when F is pressed.
-    food_deadline = (
-        time.monotonic()
-        + FEED_INTERVAL
-    )
-
-    feeding_active = True
-    eating_active = True
-    eating_index = 0
-    eating_timer = 0.0
-    state = "eating"
-
-    # Stop movement while the dog eats.
-    dog.show()
-    dog.raise_()
-
-    # Display frame 1 immediately.
-    update_eating_display()
-
-    print()
-    print(">>> DOG STARTED EATING <<<")
-    print()
-
-
-def update_eating():
-
-    global feeding_active
-    global eating_active
-    global eating_index
-    global eating_timer
-    global state
-
-    if not eating_active:
-        return
-
-    eating_timer += (
-        EATING_FPS / FPS
-    )
-
-    while eating_timer >= 1:
-
-        eating_timer -= 1
-        eating_index += 1
-
-        if eating_index >= EATING_FRAME_COUNT:
-            finish_eating()
-            return
-
-
-def update_eating_display():
-
-    if not eating_active:
-        return
-
-    pixmap = get_eating()
-
-    dog.resize(
-        CANVAS_SIZE,
-        CANVAS_SIZE
-    )
-
-    dog.setPixmap(
-        pixmap
-    )
-
-    # The prepared eating frame uses the same 400x400 canvas and
-    # baseline as the normal dog, so the dog's feet stay anchored.
-    dog.move(
-        round(dog_x),
-        round(dog_y)
-    )
-
-    dog.show()
-    dog.raise_()
-
-
-def finish_eating():
-
-    global feeding_active
-    global eating_active
-    global eating_index
-    global eating_timer
-    global state
-
-    if not eating_active:
-        return
-
-    feeding_active = False
-    eating_active = False
-    eating_index = 0
-    eating_timer = 0.0
-
-    # Let the normal movement system choose walk/run/sit/sleep again
-    # on the next update. Mud remains mud when applicable.
-    state = "mud" if muddy_active else "idle"
-
-    print()
-    print(">>> DOG FINISHED EATING <<<")
-    print()
-
-
-def start_hunger_rage():
-
-    global hunger_rage_active
-    global hunger_rage_end_time
-    global food_deadline
-    global hunger_rage_pending
-    global hunger_ssj_index
-    global hunger_ssj_timer
-    global hunger_ssj_scale
-    global state
-
-    if hunger_rage_active:
-        return
-
-    if cleaning_active or tornado_active:
-
-        hunger_rage_pending = True
-        return
-
-    hunger_rage_pending = False
-
-    hunger_rage_active = True
-
-    hunger_rage_end_time = (
-        time.monotonic()
-        + HUNGER_RAGE_DURATION
-    )
-
-    # Give the dog another deadline after the rage finishes.
-    food_deadline = (
-        time.monotonic()
-        + FEED_INTERVAL
-    )
-
-    # Cancel eating cleanly if the timer expires at the same moment.
-    if eating_active:
-        eating_active = False
-
-    if feeding_active:
-        feeding_active = False
-
-    # Start the dedicated FRONT-FACING hunger-rage SSJ animation.
-    # This is separate from the normal right-mouse SSJ mode.
-    hunger_ssj_index = 0
-    hunger_ssj_timer = 0.0
-    hunger_ssj_scale = HUNGER_SSJ_START_SCALE
-    state = "hunger_ssj"
-
-    footprints_overlay.hide()
-
-    dog.show()
-    dog.raise_()
-
-    start_screen_shake()
-
-    update_hunger_ssj_display()
-
-    # Add a fullscreen blocking overlay to visually freeze the desktop.
-    hunger_overlay.setGeometry(
-        screen.geometry()
-    )
-
-    hunger_overlay.show()
-    hunger_overlay.raise_()
-
-    update_food_timer_display()
-
-    print()
-    print(">>> HUNGER RAGE: FEEDING TIMER EXPIRED <<<")
-    print()
-
-
-def update_hunger_rage():
-
-    global hunger_rage_active
-    global state
-    global hunger_ssj_index
-    global hunger_ssj_timer
-    global hunger_ssj_scale
-
-    if not hunger_rage_active:
-        return
-
-    update_hunger_ssj()
-    update_hunger_ssj_display()
-    update_screen_shake()
-
-    hunger_overlay.raise_()
-    update_food_timer_display()
-
-    if (
-        time.monotonic()
-        < hunger_rage_end_time
-    ):
-        return
-
-    hunger_rage_active = False
-
-    hunger_overlay.hide()
-
-    stop_screen_shake()
-
-    # Reset the dedicated hunger-rage SSJ state.
-    hunger_ssj_index = 0
-    hunger_ssj_timer = 0.0
-    hunger_ssj_scale = HUNGER_SSJ_START_SCALE
-
-    state = "mud" if muddy_active else "idle"
-
-    if muddy_active:
-        footprints_overlay.show()
-        footprints_overlay.raise_()
-
-    dog.resize(
-        CANVAS_SIZE,
-        CANVAS_SIZE
-    )
-
-    dog.move(
-        round(dog_x),
-        round(dog_y)
-    )
-
-    update_food_timer_display()
-
-    print()
-    print(">>> HUNGER RAGE ENDED <<<")
-    print()
-
-
-def check_food_timer():
-
-    global hunger_rage_pending
-
-    if hunger_rage_active:
-        return
-
-    if time.monotonic() < food_deadline:
-        return
-
-    # Do not interrupt cleaning or tornado. Queue the rage and start it
-    # when the current special animation has finished.
-    if cleaning_active or tornado_active:
-
-        hunger_rage_pending = True
-        return
-
-    if ssj_active:
-        return
-
-    start_hunger_rage()
 
 
 # ============================================================
@@ -4109,11 +3355,6 @@ def process_mud_commands():
 
             start_cleaning_mode()
 
-    elif command == "feed":
-
-        # F feeds the dog and resets the hunger timer.
-        start_feeding()
-
 
 # ============================================================
 # MAIN UPDATE
@@ -4137,8 +3378,6 @@ def update():
         dog.hide()
         tornado_dog.hide()
         cleaning_dog.hide()
-        hunger_overlay.hide()
-        food_timer_label.hide()
         footprints_overlay.hide()
 
         timer.stop()
@@ -4159,44 +3398,10 @@ def update():
 
 
     # ========================================================
-    # FEED KEY COMMAND
+    # MUD KEY COMMANDS
     # ========================================================
 
     process_mud_commands()
-
-
-    # ========================================================
-    # FEEDING / HUNGER TIMER
-    # ========================================================
-
-    update_eating()
-    update_food_timer_display()
-
-    if hunger_rage_active:
-
-        update_hunger_rage()
-
-        return
-
-    check_food_timer()
-
-    if hunger_rage_active:
-        return
-
-    if hunger_rage_pending and not cleaning_active and not tornado_active and not ssj_active:
-
-        start_hunger_rage()
-
-        return
-
-    # ========================================================
-    # FEEDING ACTIVE
-    # ========================================================
-
-    if eating_active:
-
-        update_eating_display()
-        return
 
 
     # ========================================================
@@ -4347,9 +3552,7 @@ timer.start(
 
 tornado_dog.hide()
 cleaning_dog.hide()
-hunger_overlay.hide()
 footprints_overlay.hide()
-update_food_timer_display()
 
 dog.setPixmap(
     get_walk()
@@ -4476,26 +3679,6 @@ print(
 print()
 
 print(
-    "FEEDING"
-)
-print(
-    "----------------------------------------"
-)
-print(
-    "F -> Feed dog with chicken"
-)
-print(
-    "Feed timer resets after feeding"
-)
-print(
-    "If timer expires -> SSJ hunger rage"
-)
-print(
-    "Desktop is visually frozen briefly"
-)
-print()
-
-print(
     "KILL SWITCH"
 )
 print(
@@ -4541,11 +3724,5 @@ finally:
 
     try:
         mud_keyboard_listener.stop()
-    except Exception:
-        pass
-
-    try:
-        hunger_overlay.hide()
-        food_timer_label.hide()
     except Exception:
         pass
