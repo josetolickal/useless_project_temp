@@ -21,9 +21,33 @@ EAT_FPS = 10
 FEED_INTERVAL = 30.0
 EATING_DURATION = 1.20
 DRUMSTICK_SIZE = 72
-RAGE_DURATION = 4.0
+RAGE_DURATION = 5.0
+SSJ_FPS = 8
 
 BASE_DIR = Path(__file__).resolve().parent
+
+sound_file = BASE_DIR / "assets" / "sounds" / "ssj.wav"
+if not sound_file.exists():
+    sound_file = BASE_DIR.parent / "assets" / "sounds" / "ssj.wav"
+
+
+def play_ssj_sound():
+    if sys.platform == "win32":
+        try:
+            import winsound
+            if sound_file.exists():
+                winsound.PlaySound(str(sound_file), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        except Exception:
+            pass
+
+
+def stop_ssj_sound():
+    if sys.platform == "win32":
+        try:
+            import winsound
+            winsound.PlaySound(None, winsound.SND_PURGE)
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -46,30 +70,74 @@ class OverlayLabel(QLabel):
 class FreezeOverlay(QWidget):
     def __init__(self, geometry):
         super().__init__()
+        self.freeze_pixmap = None
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.Tool
             | Qt.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.setGeometry(geometry)
 
+    def capture_screen(self):
+        screen = QApplication.primaryScreen()
+        self.setGeometry(screen.geometry())
+        self.freeze_pixmap = screen.grabWindow(0)
+        self.update()
+
+    def mousePressEvent(self, event):
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        event.accept()
+
+    def wheelEvent(self, event):
+        event.accept()
+
+    def keyPressEvent(self, event):
+        event.accept()
+
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), Qt.black)
-        painter.setPen(Qt.white)
 
-        font = QFont()
-        font.setPointSize(28)
+        # 1. Draw frozen desktop screenshot
+        if self.freeze_pixmap and not self.freeze_pixmap.isNull():
+            painter.drawPixmap(0, 0, self.freeze_pixmap)
+            # 2. Frost glaze over frozen windows
+            painter.fillRect(self.rect(), QColor(130, 205, 255, 45))
+        else:
+            painter.fillRect(self.rect(), QColor(18, 18, 24, 180))
+
+        # 3. Frost / ice border vignette
+        pen = QPen(QColor(160, 230, 255, 140), 10)
+        painter.setPen(pen)
+        painter.drawRect(self.rect().adjusted(5, 5, -5, -5))
+
+        # 4. Top banner
+        banner_w = min(720, self.rect().width() - 40)
+        banner_x = (self.rect().width() - banner_w) // 2
+        banner_rect = self.rect()
+        banner_rect.setLeft(banner_x)
+        banner_rect.setWidth(banner_w)
+        banner_rect.setTop(24)
+        banner_rect.setHeight(64)
+
+        painter.setPen(QPen(QColor(130, 210, 255, 180), 2))
+        painter.setBrush(QBrush(QColor(12, 16, 26, 220)))
+        painter.drawRoundedRect(banner_rect, 10, 10)
+
+        font = painter.font()
+        font.setPointSize(22)
         font.setBold(True)
         painter.setFont(font)
+        painter.setPen(QPen(QColor(255, 215, 50, 255)))
 
-        painter.drawText(
-            self.rect(),
-            Qt.AlignCenter,
-            "DOG HUNGER RAGE!"
-        )
+        text = "❄️ WINDOWS FROZEN — DOG HUNGER RAGE! ⚡"
+        painter.drawText(banner_rect, Qt.AlignCenter, text)
         painter.end()
 
 
@@ -218,6 +286,45 @@ def load_eating_frames(eating_dir: Path):
     return frames
 
 
+def prepare_ssj_frame(pixmap: QPixmap) -> QPixmap:
+    cropped = crop_to_content(pixmap)
+    target_h = 190
+    scaled = cropped.scaledToHeight(target_h, Qt.SmoothTransformation)
+    canvas = QPixmap(CANVAS_SIZE, CANVAS_SIZE)
+    canvas.fill(Qt.transparent)
+    painter = QPainter(canvas)
+    x = (CANVAS_SIZE - scaled.width()) // 2
+    baseline = CANVAS_SIZE - 25
+    y = baseline - scaled.height()
+    painter.drawPixmap(x, y, scaled)
+    painter.end()
+    return canvas
+
+
+def load_ssj_frames():
+    frames = []
+    candidates_dirs = [
+        BASE_DIR,
+        BASE_DIR.parent,
+        BASE_DIR / "assets",
+        BASE_DIR.parent / "assets",
+    ]
+    for i in range(1, 11):
+        found = False
+        for cdir in candidates_dirs:
+            for fname in [f"ssj_front_{i:02d}.png", f"ssj_{i:02d}.png"]:
+                p = cdir / fname
+                if p.exists():
+                    pm = QPixmap(str(p))
+                    if not pm.isNull():
+                        frames.append(prepare_ssj_frame(pm))
+                        found = True
+                        break
+            if found:
+                break
+    return frames
+
+
 # ============================================================
 # APPLICATION
 # ============================================================
@@ -268,6 +375,7 @@ food_path = food_dir / "chicken_drumstick.png"
 
 walk_frames = load_walk_frames(dog_dir)
 eat_frames = load_eating_frames(eating_dir)
+ssj_frames = load_ssj_frames()
 
 drumstick = load_pixmap(food_path)
 drumstick = drumstick.scaled(
@@ -298,6 +406,8 @@ food_deadline = time.monotonic() + FEED_INTERVAL
 
 rage_active = False
 rage_end_time = 0.0
+ssj_index = 0
+ssj_timer = 0.0
 
 
 # ============================================================
@@ -337,7 +447,8 @@ def update_walk():
 
 def update_hud():
     if rage_active:
-        text = "DOG HUNGER RAGE!"
+        remaining = max(0, math.ceil(rage_end_time - time.monotonic()))
+        text = f"❄️ WINDOWS FROZEN: {remaining}s"
     elif feeding:
         text = "🍗 DOG IS EATING"
     else:
@@ -454,6 +565,8 @@ def start_rage():
     global rage_end_time
     global food_deadline
     global feeding
+    global ssj_index
+    global ssj_timer
 
     if rage_active:
         return
@@ -465,22 +578,61 @@ def start_rage():
 
     chicken.hide()
     dog.hide()
+    QApplication.processEvents()
 
+    freeze.capture_screen()
     freeze.show()
     freeze.raise_()
+
+    ssj_index = 0
+    ssj_timer = 0.0
+    if ssj_frames:
+        frame = ssj_frames[0]
+        if facing < 0:
+            frame = flip(frame)
+        dog.setPixmap(frame)
+        dog.resize(CANVAS_SIZE, CANVAS_SIZE)
+        dog.move(round(dog_x), round(dog_y))
+
+    dog.show()
+    dog.raise_()
+    timer_label.raise_()
+    play_ssj_sound()
+    update_hud()
 
 
 def update_rage():
     global rage_active
+    global ssj_index
+    global ssj_timer
 
     if not rage_active:
         return
 
+    if ssj_frames:
+        ssj_timer += SSJ_FPS / FPS
+        while ssj_timer >= 1:
+            ssj_timer -= 1
+            if ssj_index < len(ssj_frames) - 1:
+                ssj_index += 1
+            else:
+                ssj_index = max(0, len(ssj_frames) - 5)
+
+        frame = ssj_frames[ssj_index]
+        if facing < 0:
+            frame = flip(frame)
+        dog.setPixmap(frame)
+        dog.resize(CANVAS_SIZE, CANVAS_SIZE)
+        dog.move(round(dog_x), round(dog_y))
+
     freeze.raise_()
+    dog.raise_()
+    timer_label.raise_()
 
     if time.monotonic() >= rage_end_time:
         rage_active = False
         freeze.hide()
+        stop_ssj_sound()
         show_normal_dog()
 
 
