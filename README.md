@@ -156,7 +156,7 @@ flowchart TD
 ### Screenshots
 
 # Screenshots
-![Chavalam Patti Banner](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
+![Chavalam Patti Banner](https://github.com/josetolickal/useless_project_temp/blob/3e1bbd5934468c9a08f98c93f723c04b9e7cd83f/ss%201.jpeg)
 *Chavalam Patti desktop companion in action.*
 
 ![Feeding and Mud Animation](chicken_drumstick.png)
