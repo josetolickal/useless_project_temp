@@ -159,10 +159,10 @@ flowchart TD
 ![Chavalam Patti Banner](https://github.com/josetolickal/useless_project_temp/blob/3e1bbd5934468c9a08f98c93f723c04b9e7cd83f/ss%201.jpeg)
 *Chavalam Patti desktop companion in action.*
 
-![Feeding and Mud Animation](chicken_drumstick.png)
+![Feeding and Mud Animation](ss2.jpeg)
 *Interactive feeding mechanism featuring drumstick physics and mud transitions.*
 
-![Cat and Ball Companions](assets/cat/cat_sit.png)
+![Cat and Ball Companions](ss3.jpeg)
 *Companion cat and bouncy ball toys summoned during autonomous Free Mode.*
 
 ---
